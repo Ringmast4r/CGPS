@@ -1,0 +1,108 @@
+#include <M5Core2.h>
+#include <TinyGPS++.h>
+
+TinyGPSPlus gps;
+HardwareSerial GPSModule(1);
+
+// Variables to store the previous GPS data for comparison
+float prevLat = 0, prevLng = 0, prevAlt = 0;
+int prevSat = 0;
+float prevSpeed = 0;
+String prevTime = "";
+
+// Buffer for double buffering
+char displayBuffer[6][100];
+bool bufferDirty[6];
+
+void setup() {
+    M5.begin();
+    Serial.begin(115200);
+    GPSModule.begin(9600, SERIAL_8N1, 13, 14); // RX, TX pins for GPS
+
+    M5.Lcd.setTextColor(WHITE);
+    M5.Lcd.setTextSize(2);
+
+    // Initialize bufferDirty flags to true
+    for (int i = 0; i < 6; i++) {
+        bufferDirty[i] = true;
+    }
+}
+
+void loop() {
+    while (GPSModule.available() > 0) {
+        if (gps.encode(GPSModule.read())) {
+            displayGPSInfo();
+        }
+    }
+    M5.update();
+}
+
+void displayGPSInfo() {
+    // Check if GPS location is valid
+    if (gps.location.isValid()) {
+        // Check and update Latitude
+        if (prevLat != gps.location.lat()) {
+            prevLat = gps.location.lat();
+            updateLine(0, "Latitude: %.6f", prevLat);
+        }
+
+        // Check and update Longitude
+        if (prevLng != gps.location.lng()) {
+            prevLng = gps.location.lng();
+            updateLine(1, "Longitude: %.6f", prevLng);
+        }
+
+        // Check and update Altitude
+        if (prevAlt != gps.altitude.meters()) {
+            prevAlt = gps.altitude.meters();
+            updateLine(2, "Alt: %.2f m", prevAlt);
+        }
+
+        // Check and update Satellites
+        if (prevSat != gps.satellites.value()) {
+            prevSat = gps.satellites.value();
+            updateLine(3, "Satellites: %d", prevSat);
+        }
+
+        // Check and update Speed
+        if (prevSpeed != gps.speed.kmph()) {
+            prevSpeed = gps.speed.kmph();
+            updateLine(4, "Speed: %.2f km/h", prevSpeed);
+        }
+
+        // Check and update Time
+        String currentTime = String(gps.time.hour()) + ":" + String(gps.time.minute()) + ":" + String(gps.time.second());
+        if (prevTime != currentTime) {
+            prevTime = currentTime;
+            updateLine(5, "Time: %s", prevTime.c_str());
+        }
+    } else {
+        // Display "Searching for GPS signal..." if no GPS data
+        updateLine(0, "Searching for GPS signal...");
+    }
+
+    // Copy buffer to display only when it's dirty
+    for (int i = 0; i < 6; i++) {
+        if (bufferDirty[i]) {
+            M5.Lcd.setCursor(0, i * 20);
+            M5.Lcd.fillRect(0, i * 20, 320, 20, BLACK); // Clear the line
+            M5.Lcd.printf(displayBuffer[i]);
+            bufferDirty[i] = false;
+        }
+    }
+}
+
+// Update a specific line in the buffer
+void updateLine(int line, const char *format, ...) {
+    char buffer[100];
+    va_list args;
+    va_start(args, format);
+    vsnprintf(buffer, sizeof(buffer), format, args);
+    va_end(args);
+
+    if (strcmp(buffer, displayBuffer[line]) != 0) {
+        strncpy(displayBuffer[line], buffer, sizeof(displayBuffer[line]) - 1);
+        displayBuffer[line][sizeof(displayBuffer[line]) - 1] = '\0';
+        bufferDirty[line] = true;
+    }
+}
